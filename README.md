@@ -13,7 +13,7 @@ A lightweight Java library for mapping Excel sheet data directly into Java objec
 <dependency>
     <groupId>io.github.tanphat1095</groupId>
     <artifactId>excel-reader</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
 </dependency>
 ```
 
