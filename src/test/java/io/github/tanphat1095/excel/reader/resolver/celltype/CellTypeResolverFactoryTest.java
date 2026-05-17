@@ -46,13 +46,23 @@ class CellTypeResolverFactoryTest {
         return row.createCell(0, cellType);
     }
 
+    // CellType.FORMULA ở POI yêu cầu phải set formula string mới thực sự là FORMULA type.
+    // createCell(CellType.FORMULA) không set formula → getCellType() trả về BLANK.
+    private Cell createFormulaCell() {
+        Sheet sheet = workbook.createSheet();
+        Row row = sheet.createRow(0);
+        Cell cell = row.createCell(0);
+        cell.setCellFormula("1+1");
+        return cell;
+    }
+
     @Nested
     class Register {
 
         @Test
         void shouldFindCustomResolverForNewCellType() {
             factory.register(new CellFormulaResolver());
-            Cell formulaCell = createCell(CellType.FORMULA);
+            Cell formulaCell = createFormulaCell();
 
             CellTypeResolver resolver = factory.getCellTypeResolver(formulaCell);
 
@@ -116,7 +126,7 @@ class CellTypeResolverFactoryTest {
         @Test
         void shouldAlsoWorkForNewCellTypes() {
             factory.registerFirst(new CellFormulaResolver());
-            Cell formulaCell = createCell(CellType.FORMULA);
+            Cell formulaCell = createFormulaCell();
 
             CellTypeResolver resolver = factory.getCellTypeResolver(formulaCell);
 
