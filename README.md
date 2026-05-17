@@ -112,11 +112,15 @@ Note: the `datePattern` must be passed to `SourceToTargetResolverFactory` as wel
 
 ## Extending the Library
 
-All three factories expose a `register()` method. Call it to add your custom resolver before calling `read()`.
+All three factories extend `ResolverRegistry<R>`, which exposes two methods for adding resolvers.
+
+`register(resolver)` appends to the end of the chain. Use this to add support for a type that is not handled by any built-in resolver. If the new resolver's `supports()` condition overlaps with a built-in, the built-in will still win.
+
+`registerFirst(resolver)` inserts at the front of the chain. Use this when you want to override the default behavior for a type that is already supported.
 
 ### Custom CellTypeResolver
 
-Use this when you need to handle an Excel cell type that is not covered by default, or when you want to distinguish cells of the same type by some other condition.
+Use this when you need to handle an Excel cell type not covered by default, or override how an existing cell type is interpreted.
 
 ```java
 public class CellFormulaResolver implements CellTypeResolver {
@@ -134,7 +138,7 @@ public class CellFormulaResolver implements CellTypeResolver {
 }
 ```
 
-Register it:
+Register it (new type, no conflict with built-ins):
 
 ```java
 CellTypeResolverFactory cellTypeFactory = new CellTypeResolverFactory();
@@ -150,10 +154,10 @@ ExcelReader reader = ExcelReader.builder()
 
 ### Custom CellValueResolver
 
-Use this when you need to extract a value from a cell in a non-standard way for a given source type.
+Use this when you need to extract a value from a cell in a non-standard way. If the `supports()` condition overlaps with an existing built-in (for example, you want to replace the default `StringResolver`), use `registerFirst()` so your resolver takes priority.
 
 ```java
-public class RichTextResolver implements CellValueResolver<String> {
+public class TrimmingStringResolver implements CellValueResolver<String> {
 
     @Override
     public boolean supports(Class<?> source) {
@@ -162,20 +166,17 @@ public class RichTextResolver implements CellValueResolver<String> {
 
     @Override
     public String resolve(Cell cell) {
-        // Strip leading/trailing whitespace during extraction
         return cell.getStringCellValue().trim();
     }
 }
 ```
 
-Register it:
+Register it (overrides the built-in `StringResolver`):
 
 ```java
 CellValueResolverFactory cellValueFactory = new CellValueResolverFactory();
-cellValueFactory.register(new RichTextResolver());
+cellValueFactory.registerFirst(new TrimmingStringResolver());
 ```
-
-Resolvers are matched in registration order, so a newly registered resolver that matches first will take precedence over the built-in ones. Register before creating the `ExcelReader` if you want to override a default.
 
 ### Custom SourceToTargetResolver
 

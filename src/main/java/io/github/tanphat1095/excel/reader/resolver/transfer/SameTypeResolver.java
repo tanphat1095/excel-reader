@@ -5,7 +5,7 @@ public abstract class SameTypeResolver<T> implements SourceToTargetResolver<T, T
 
     @Override
     public boolean supports(Class<?> source, Class<?> target) {
-        return supports(source) || supports(target);
+        return supports(source) && supports(target);
     }
 
     abstract boolean supports(Class<?> source);

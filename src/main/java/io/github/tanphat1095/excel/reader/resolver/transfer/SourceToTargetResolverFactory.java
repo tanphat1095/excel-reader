@@ -1,37 +1,24 @@
 package io.github.tanphat1095.excel.reader.resolver.transfer;
 
-
 import io.github.tanphat1095.excel.reader.exception.ExcelReaderException;
-import lombok.AllArgsConstructor;
+import io.github.tanphat1095.excel.reader.resolver.ResolverRegistry;
 
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
 
-@AllArgsConstructor
-public class SourceToTargetResolverFactory {
+public class SourceToTargetResolverFactory extends ResolverRegistry<SourceToTargetResolver<?, ?>> {
 
-    private final List<SourceToTargetResolver<?,?>> resolvers;
-    private final String datePattern;
     public SourceToTargetResolverFactory(String datePattern) {
-        this(new ArrayList<>(), datePattern);
         register(new StringToStringResolver());
-        register(new StringToLocalDateResolver(DateTimeFormatter.ofPattern(this.datePattern)));
+        register(new StringToLocalDateResolver(DateTimeFormatter.ofPattern(datePattern)));
         register(new DateToLocalDateResolver());
         register(new SameDoubleResolver());
-        resolvers.add(new SameBooleanResolver());
-    }
-
-    public void register(SourceToTargetResolver<?,?> resolver) {
-        resolvers.add(resolver);
+        register(new SameBooleanResolver());
     }
 
     @SuppressWarnings("unchecked")
-    public <S, T, P extends SourceToTargetResolver<S,T>> P getResolver(Class<S> source, Class<T> target){
-        return (P) this.resolvers.stream()
-                .filter(resolver -> resolver.supports(source, target))
-                .findFirst()
-                .orElseThrow(() -> new ExcelReaderException("There are no resolver for transfer from " + source.getName() + " to " + target.getName()));
+    public <S, T, P extends SourceToTargetResolver<S, T>> P getResolver(Class<S> source, Class<T> target) {
+        return (P) find(r -> r.supports(source, target))
+                .orElseThrow(() -> new ExcelReaderException(
+                        "There are no resolver for transfer from " + source.getName() + " to " + target.getName()));
     }
-
 }
