@@ -6,15 +6,15 @@
 
     <groupId>io.github.tanphat1095</groupId>
     <artifactId>excel-reader</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
 
     <name>Excel Reader</name>
     <description>Util module for reading excel</description>
     <url>https://github.com/tanphat1095/excel-reader</url>
 
     <properties>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <apache.poi.version>5.5.1</apache.poi.version>
         <lombok.version>1.18.32</lombok.version>

@@ -4,7 +4,7 @@ A lightweight Java library for mapping Excel sheet data directly into Java objec
 
 ## Requirements
 
-- Java 21+
+- Java 17+
 - Apache POI is included as a transitive dependency
 
 ## Installation
@@ -13,7 +13,7 @@ A lightweight Java library for mapping Excel sheet data directly into Java objec
 <dependency>
     <groupId>io.github.tanphat1095</groupId>
     <artifactId>excel-reader</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.x</version>
 </dependency>
 ```
 
