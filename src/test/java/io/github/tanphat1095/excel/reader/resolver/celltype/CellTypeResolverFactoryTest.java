@@ -13,17 +13,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CellTypeResolverFactoryTest {
 
-    // --- Custom resolver for FORMULA cells (no built-in conflict) ---
-    static class CellFormulaResolver implements CellTypeResolver {
-        @Override public boolean supports(CellType cellType) { return cellType == CellType.FORMULA; }
+    // --- Custom resolver for BLANK cells (genuinely no built-in — safe "new type" for register() tests) ---
+    static class CellBlankResolver implements CellTypeResolver {
+        @Override public boolean supports(CellType cellType) { return cellType == CellType.BLANK; }
         @Override public Class<?> resolve(Cell cell) { return String.class; }
     }
 
     // --- Custom resolver whose supports() conflicts with the built-in CellStringResolver ---
     static class CustomStringTypeResolver implements CellTypeResolver {
         @Override public boolean supports(CellType cellType) { return cellType == CellType.STRING; }
-        // Returns a different marker class to distinguish from the built-in
-        @Override public Class<?> resolve(Cell cell) { return Integer.class; }
+        @Override public Class<?> resolve(Cell cell) { return Integer.class; } // marker class
     }
 
     private Workbook workbook;
@@ -46,8 +45,7 @@ class CellTypeResolverFactoryTest {
         return row.createCell(0, cellType);
     }
 
-    // CellType.FORMULA ở POI yêu cầu phải set formula string mới thực sự là FORMULA type.
-    // createCell(CellType.FORMULA) không set formula → getCellType() trả về BLANK.
+    // CellType.FORMULA requires an actual formula string — createCell(FORMULA) leaves getCellType() as BLANK.
     private Cell createFormulaCell() {
         Sheet sheet = workbook.createSheet();
         Row row = sheet.createRow(0);
@@ -56,23 +54,59 @@ class CellTypeResolverFactoryTest {
         return cell;
     }
 
+    // -------------------------------------------------------------------------
+    // Built-in behaviour
+    // -------------------------------------------------------------------------
+
+    @Test
+    void builtInShouldResolveStringCellToStringClass() {
+        Cell stringCell = createCell(CellType.STRING);
+
+        Class<?> resolved = factory.getCellTypeResolver(stringCell).resolve(stringCell);
+
+        assertEquals(String.class, resolved);
+    }
+
+    @Test
+    void builtInCellFormulaResolverShouldHandleFormulaCells() {
+        Cell formulaCell = createFormulaCell();
+
+        CellTypeResolver resolver = factory.getCellTypeResolver(formulaCell);
+
+        assertNotNull(resolver);
+        assertInstanceOf(io.github.tanphat1095.excel.reader.resolver.celltype.CellFormulaResolver.class, resolver,
+                "CellFormulaResolver must be registered as a built-in");
+    }
+
+    @Test
+    void shouldReturnNullWhenNoCellTypeResolverFound() {
+        // BLANK has no built-in resolver
+        Cell blankCell = createCell(CellType.BLANK);
+
+        assertNull(factory.getCellTypeResolver(blankCell));
+    }
+
+    // -------------------------------------------------------------------------
+    // register()
+    // -------------------------------------------------------------------------
+
     @Nested
     class Register {
 
         @Test
         void shouldFindCustomResolverForNewCellType() {
-            factory.register(new CellFormulaResolver());
-            Cell formulaCell = createFormulaCell();
+            // BLANK has no built-in — safe new-type test
+            factory.register(new CellBlankResolver());
+            Cell blankCell = createCell(CellType.BLANK);
 
-            CellTypeResolver resolver = factory.getCellTypeResolver(formulaCell);
+            CellTypeResolver resolver = factory.getCellTypeResolver(blankCell);
 
             assertNotNull(resolver);
-            assertInstanceOf(CellFormulaResolver.class, resolver);
+            assertInstanceOf(CellBlankResolver.class, resolver);
         }
 
         @Test
         void shouldNotOverrideBuiltInWhenSupportsConflicts() {
-            // register() adds to the end — built-in CellStringResolver is already at the front
             factory.register(new CustomStringTypeResolver());
             Cell stringCell = createCell(CellType.STRING);
 
@@ -82,17 +116,11 @@ class CellTypeResolverFactoryTest {
             assertFalse(resolver instanceof CustomStringTypeResolver,
                     "register() must not shadow the built-in CellStringResolver");
         }
-
-        @Test
-        void builtInShouldResolveStringCellToStringClass() {
-            Cell stringCell = createCell(CellType.STRING);
-
-            CellTypeResolver resolver = factory.getCellTypeResolver(stringCell);
-            Class<?> resolvedType = resolver.resolve(stringCell);
-
-            assertEquals(String.class, resolvedType);
-        }
     }
+
+    // -------------------------------------------------------------------------
+    // registerFirst()
+    // -------------------------------------------------------------------------
 
     @Nested
     class RegisterFirst {
@@ -114,34 +142,41 @@ class CellTypeResolverFactoryTest {
             factory.registerFirst(new CustomStringTypeResolver());
             Cell stringCell = createCell(CellType.STRING);
 
-            CellTypeResolver resolver = factory.getCellTypeResolver(stringCell);
-            Class<?> resolvedType = resolver.resolve(stringCell);
+            Class<?> resolved = factory.getCellTypeResolver(stringCell).resolve(stringCell);
 
-            // CustomStringTypeResolver returns Integer.class as a marker,
-            // while the built-in CellStringResolver returns String.class
-            assertEquals(Integer.class, resolvedType,
+            assertEquals(Integer.class, resolved,
                     "Custom resolver must be invoked, not the built-in CellStringResolver");
         }
 
         @Test
         void shouldAlsoWorkForNewCellTypes() {
-            factory.registerFirst(new CellFormulaResolver());
-            Cell formulaCell = createFormulaCell();
+            factory.registerFirst(new CellBlankResolver());
+            Cell blankCell = createCell(CellType.BLANK);
 
-            CellTypeResolver resolver = factory.getCellTypeResolver(formulaCell);
+            CellTypeResolver resolver = factory.getCellTypeResolver(blankCell);
 
             assertNotNull(resolver);
-            assertInstanceOf(CellFormulaResolver.class, resolver);
+            assertInstanceOf(CellBlankResolver.class, resolver);
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Cache invalidation
+    // -------------------------------------------------------------------------
+
     @Test
-    void shouldReturnNullWhenNoCellTypeResolverFound() {
-        // BLANK cell type has no built-in resolver
-        Cell blankCell = createCell(CellType.BLANK);
+    void cacheShouldBeInvalidatedAfterRegisterFirst() {
+        Cell stringCell = createCell(CellType.STRING);
 
-        CellTypeResolver resolver = factory.getCellTypeResolver(blankCell);
+        // Warm cache — built-in wins
+        CellTypeResolver before = factory.getCellTypeResolver(stringCell);
+        assertFalse(before instanceof CustomStringTypeResolver);
 
-        assertNull(resolver);
+        // Override — cache must be cleared
+        factory.registerFirst(new CustomStringTypeResolver());
+
+        CellTypeResolver after = factory.getCellTypeResolver(stringCell);
+        assertInstanceOf(CustomStringTypeResolver.class, after,
+                "Lookup cache must be invalidated after registerFirst()");
     }
 }

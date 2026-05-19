@@ -5,21 +5,19 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.math.BigDecimal;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 class SourceToTargetResolverFactoryTest {
 
-    // --- Custom resolver for a brand-new target type (Double -> BigDecimal) ---
-    static class DoubleToBigDecimalResolver implements SourceToTargetResolver<Double, BigDecimal> {
+    // --- Custom resolver for a brand-new target type (Double -> ZonedDateTime, genuinely unsupported) ---
+    static class DoubleToZonedDateTimeResolver implements SourceToTargetResolver<Double, java.time.ZonedDateTime> {
         @Override
         public boolean supports(Class<?> source, Class<?> target) {
-            return Double.class == source && BigDecimal.class == target;
+            return Double.class == source && java.time.ZonedDateTime.class == target;
         }
         @Override
-        public BigDecimal resolve(Double source) {
-            return source == null ? null : BigDecimal.valueOf(source);
+        public java.time.ZonedDateTime resolve(Double source) {
+            return null; // marker — conversion logic is irrelevant for registration tests
         }
     }
 
@@ -49,23 +47,23 @@ class SourceToTargetResolverFactoryTest {
 
         @Test
         void shouldFindCustomResolverForNewTargetType() {
-            factory.register(new DoubleToBigDecimalResolver());
+            // ZonedDateTime has no built-in resolver — safe "new type" test
+            factory.register(new DoubleToZonedDateTimeResolver());
 
-            SourceToTargetResolver<?, ?> resolver = factory.getResolver(Double.class, BigDecimal.class);
+            SourceToTargetResolver<?, ?> resolver = factory.getResolver(Double.class, java.time.ZonedDateTime.class);
 
             assertNotNull(resolver);
-            assertInstanceOf(DoubleToBigDecimalResolver.class, resolver);
+            assertInstanceOf(DoubleToZonedDateTimeResolver.class, resolver);
         }
 
         @Test
-        void customResolverShouldConvertValueCorrectly() {
-            factory.register(new DoubleToBigDecimalResolver());
+        void customResolverShouldBeFoundAfterRegister() {
+            factory.register(new DoubleToZonedDateTimeResolver());
 
-            @SuppressWarnings("unchecked")
-            SourceToTargetResolver<Double, BigDecimal> resolver =
-                    (SourceToTargetResolver<Double, BigDecimal>) factory.getResolver(Double.class, BigDecimal.class);
+            SourceToTargetResolver<?, ?> resolver = factory.getResolver(Double.class, java.time.ZonedDateTime.class);
 
-            assertEquals(BigDecimal.valueOf(3.14), resolver.resolve(3.14));
+            assertNotNull(resolver);
+            assertInstanceOf(DoubleToZonedDateTimeResolver.class, resolver);
         }
 
         @Test
@@ -82,8 +80,9 @@ class SourceToTargetResolverFactoryTest {
 
         @Test
         void shouldThrowWhenNoResolverFoundForType() {
+            // ZonedDateTime has no built-in resolver and we have not registered one
             assertThrows(ExcelReaderException.class,
-                    () -> factory.getResolver(Double.class, BigDecimal.class),
+                    () -> factory.getResolver(Double.class, java.time.ZonedDateTime.class),
                     "getResolver() must throw when no resolver supports the requested type pair");
         }
     }
@@ -116,12 +115,12 @@ class SourceToTargetResolverFactoryTest {
 
         @Test
         void shouldAlsoWorkForNewTargetTypes() {
-            factory.registerFirst(new DoubleToBigDecimalResolver());
+            factory.registerFirst(new DoubleToZonedDateTimeResolver());
 
-            SourceToTargetResolver<?, ?> resolver = factory.getResolver(Double.class, BigDecimal.class);
+            SourceToTargetResolver<?, ?> resolver = factory.getResolver(Double.class, java.time.ZonedDateTime.class);
 
             assertNotNull(resolver);
-            assertInstanceOf(DoubleToBigDecimalResolver.class, resolver);
+            assertInstanceOf(DoubleToZonedDateTimeResolver.class, resolver);
         }
     }
 }

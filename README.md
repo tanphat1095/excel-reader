@@ -13,7 +13,7 @@ A lightweight Java library for mapping Excel sheet data directly into Java objec
 <dependency>
     <groupId>io.github.tanphat1095</groupId>
     <artifactId>excel-reader</artifactId>
-    <version>1.0.x</version>
+    <version>1.0.0</version>
 </dependency>
 ```
 
@@ -61,17 +61,83 @@ try (Workbook workbook = new XSSFWorkbook(new FileInputStream("data.xlsx"))) {
 
 The `CellReference` defines the first data cell. Rows above it are skipped, making it straightforward to skip header rows.
 
+## Reading Modes
+
+Three overloads are available depending on how you want to handle memory.
+
+**Collect into a List** — simplest, entire result held in memory:
+
+```java
+List<Employee> employees = reader.read(sheet, new CellReference("A2"), Employee.class);
+```
+
+**Process row-by-row via callback** — result objects are not accumulated, suitable for write-through pipelines such as batch database inserts:
+
+```java
+reader.read(sheet, new CellReference("A2"), Employee.class, employee -> {
+    repository.save(employee);
+});
+```
+
+**Lazy Stream** — functional-style processing, result set is never fully materialized in heap:
+
+```java
+reader.stream(sheet, new CellReference("A2"), Employee.class)
+      .filter(Employee::isActive)
+      .forEach(processor::process);
+```
+
+Note: all three modes still require the sheet to be loaded by the caller. `XSSFWorkbook` loads the entire file into memory at open time. For files with hundreds of thousands of rows, open the workbook with POI's event-based API and pass each sheet to the reader separately.
+
 ## Built-in Type Support
 
-The following Excel cell types and Java field type combinations work out of the box.
+The following Excel cell type → Java field type combinations work out of the box.
 
-| Excel cell type | Java field type  | Notes                                              |
-|-----------------|------------------|----------------------------------------------------|
-| String          | `String`         |                                                    |
-| Numeric         | `Double`         |                                                    |
-| Numeric (date)  | `LocalDate`      | POI detects date-formatted cells automatically     |
-| String          | `LocalDate`      | Default pattern: `dd-MM-yyyy` (configurable)       |
-| Boolean         | `Boolean`        |                                                    |
+### Numeric cell
+
+| Java field type | Notes |
+|---|---|
+| `Double` | direct |
+| `Integer` | truncates decimal part |
+| `Long` | truncates decimal part |
+| `BigDecimal` | via `BigDecimal.valueOf` |
+| `String` | whole numbers formatted without `.0` (e.g. `42`, not `42.0`) |
+
+### Numeric cell (date-formatted)
+
+| Java field type | Notes |
+|---|---|
+| `LocalDate` | POI detects date-formatted cells automatically |
+| `LocalDateTime` | preserves time component |
+| `String` | formatted with `datePattern` (default `dd-MM-yyyy`) |
+
+### String cell
+
+| Java field type | Notes |
+|---|---|
+| `String` | direct |
+| `LocalDate` | parsed with `datePattern` (default `dd-MM-yyyy`) |
+| `LocalDateTime` | parsed with `datetimePattern` (default `dd-MM-yyyy HH:mm:ss`) |
+| `Double` | parsed via `Double.parseDouble` |
+| `Integer` | parsed, truncates decimal if present |
+| `Long` | parsed, truncates decimal if present |
+| `BigDecimal` | parsed via `new BigDecimal(...)` |
+| `Boolean` | accepts `true/false`, `yes/no`, `1/0`, `y/n` (case-insensitive) |
+
+### Boolean cell
+
+| Java field type | Notes |
+|---|---|
+| `Boolean` | direct |
+| `String` | `"true"` or `"false"` |
+
+### Formula cell
+
+The cached result value is read and mapped using the same rules as the corresponding non-formula cell type above.
+
+### Blank, null, or error cell
+
+Fields are left at their Java default value (`null` for objects, `0` for primitives, `false` for booleans). No exception is thrown.
 
 ## How It Works
 
@@ -95,20 +161,21 @@ Java field set via setter
 
 ## Configuration
 
-### Custom date pattern
+### Custom date and datetime patterns
 
-When a date column is stored as a plain string (not a date-formatted Excel cell), the library parses it using a configurable pattern. The default is `dd-MM-yyyy`.
+`datePattern` applies when a date column is stored as a plain string or when converting a date cell to `String`. `datetimePattern` applies when a datetime column is stored as a plain string or when mapping to `LocalDateTime`.
 
 ```java
 ExcelReader reader = ExcelReader.builder()
         .datePattern("yyyy/MM/dd")
+        .datetimePattern("yyyy/MM/dd HH:mm:ss")
         .cellTypeResolverFactory(new CellTypeResolverFactory())
         .cellValueResolverFactory(new CellValueResolverFactory())
-        .sourceToTargetResolverFactory(new SourceToTargetResolverFactory("yyyy/MM/dd"))
+        .sourceToTargetResolverFactory(new SourceToTargetResolverFactory("yyyy/MM/dd", "yyyy/MM/dd HH:mm:ss"))
         .build();
 ```
 
-Note: the `datePattern` must be passed to `SourceToTargetResolverFactory` as well since that is where `StringToLocalDateResolver` lives.
+Both patterns must be passed to `SourceToTargetResolverFactory` as well since that is where the string-parsing resolvers live.
 
 ## Extending the Library
 
@@ -120,32 +187,32 @@ All three factories extend `ResolverRegistry<R>`, which exposes two methods for 
 
 ### Custom CellTypeResolver
 
-Use this when you need to handle an Excel cell type not covered by default, or override how an existing cell type is interpreted.
+Use this when you need to handle an Excel cell type not covered by default, or override how an existing cell type is interpreted. The example below treats `ERROR` cells as empty strings instead of being silently skipped.
 
 ```java
-public class CellFormulaResolver implements CellTypeResolver {
+public class CellErrorAsEmptyResolver implements CellTypeResolver {
 
     @Override
     public boolean supports(CellType cellType) {
-        return cellType == CellType.FORMULA;
+        return cellType == CellType.ERROR;
     }
 
     @Override
     public Class<?> resolve(Cell cell) {
-        // Treat all formula cells as String
         return String.class;
     }
 }
 ```
 
-Register it (new type, no conflict with built-ins):
+Register it:
 
 ```java
 CellTypeResolverFactory cellTypeFactory = new CellTypeResolverFactory();
-cellTypeFactory.register(new CellFormulaResolver());
+cellTypeFactory.register(new CellErrorAsEmptyResolver());
 
 ExcelReader reader = ExcelReader.builder()
         .datePattern("dd-MM-yyyy")
+        .datetimePattern("dd-MM-yyyy HH:mm:ss")
         .cellTypeResolverFactory(cellTypeFactory)
         .cellValueResolverFactory(new CellValueResolverFactory())
         .sourceToTargetResolverFactory(new SourceToTargetResolverFactory("dd-MM-yyyy"))
@@ -154,7 +221,7 @@ ExcelReader reader = ExcelReader.builder()
 
 ### Custom CellValueResolver
 
-Use this when you need to extract a value from a cell in a non-standard way. If the `supports()` condition overlaps with an existing built-in (for example, you want to replace the default `StringResolver`), use `registerFirst()` so your resolver takes priority.
+Use this when you need to extract a value from a cell in a non-standard way. If the `supports()` condition overlaps with an existing built-in, use `registerFirst()` so your resolver takes priority.
 
 ```java
 public class TrimmingStringResolver implements CellValueResolver<String> {
@@ -180,22 +247,19 @@ cellValueFactory.registerFirst(new TrimmingStringResolver());
 
 ### Custom SourceToTargetResolver
 
-Use this to support a field type that is not built in, such as `BigDecimal`, `Long`, `Enum`, or any domain type.
-
-**Example: Double to BigDecimal**
+Use this to support a field type that is not built in, or to override existing conversion logic. The example below maps a numeric cell to a domain `Money` type.
 
 ```java
-public class DoubleToBigDecimalResolver implements SourceToTargetResolver<Double, BigDecimal> {
+public class DoubleToMoneyResolver implements SourceToTargetResolver<Double, Money> {
 
     @Override
     public boolean supports(Class<?> source, Class<?> target) {
-        return Double.class == source && BigDecimal.class == target;
+        return Double.class == source && Money.class == target;
     }
 
     @Override
-    public BigDecimal resolve(Double source) {
-        if (source == null) return null;
-        return BigDecimal.valueOf(source);
+    public Money resolve(Double source) {
+        return source == null ? null : Money.of(source, Currency.getInstance("USD"));
     }
 }
 ```
@@ -222,43 +286,26 @@ Register and build:
 
 ```java
 SourceToTargetResolverFactory transferFactory = new SourceToTargetResolverFactory("dd-MM-yyyy");
-transferFactory.register(new DoubleToBigDecimalResolver());
+transferFactory.register(new DoubleToMoneyResolver());
 transferFactory.register(new StringToDepartmentResolver());
 
 ExcelReader reader = ExcelReader.builder()
         .datePattern("dd-MM-yyyy")
+        .datetimePattern("dd-MM-yyyy HH:mm:ss")
         .cellTypeResolverFactory(new CellTypeResolverFactory())
         .cellValueResolverFactory(new CellValueResolverFactory())
         .sourceToTargetResolverFactory(transferFactory)
         .build();
 ```
 
-And the corresponding class:
-
-```java
-public class Employee {
-
-    @ExcelColumn(index = 0)
-    private String name;
-
-    @ExcelColumn(index = 1)
-    private BigDecimal salary;
-
-    @ExcelColumn(index = 2)
-    private Department department;
-
-    // no-arg constructor + getters + setters
-}
-```
-
 ## Exception Handling
 
-| Exception                    | When it is thrown                                                                                      |
-|------------------------------|--------------------------------------------------------------------------------------------------------|
-| `ExcelReaderException`       | No resolver found for a cell type or source-to-target type pair; date string in wrong format           |
-| `ExcelCreateResultException` | Target class has no public no-arg constructor; `Map` passed as result type; introspection failure      |
+| Exception                    | When it is thrown                                                                                          |
+|------------------------------|------------------------------------------------------------------------------------------------------------|
+| `ExcelReaderException`       | No resolver found for a cell type or source-to-target type pair; value string cannot be parsed to target type |
+| `ExcelCreateResultException` | Target class has no public no-arg constructor; `Map` passed as result type; introspection failure          |
 
-Both are unchecked exceptions (`RuntimeException`).
+Both are unchecked exceptions (`RuntimeException`). Blank, null, and error cells do not throw — they silently leave the field at its Java default.
 
 ## License
 

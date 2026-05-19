@@ -17,6 +17,7 @@ public abstract class ResolverRegistry<R> {
      */
     public void register(R resolver) {
         resolvers.add(resolver);
+        onRegister();
     }
 
     /**
@@ -26,6 +27,15 @@ public abstract class ResolverRegistry<R> {
      */
     public void registerFirst(R resolver) {
         resolvers.add(0, resolver);
+        onRegister();
+    }
+
+    /**
+     * Hook called after every register/registerFirst. Subclasses override this to invalidate
+     * their lookup cache whenever the resolver list changes.
+     */
+    protected void onRegister() {
+        // default: no-op
     }
 
     protected Optional<R> find(Predicate<R> predicate) {
